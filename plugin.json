@@ -29,7 +29,15 @@
     "binaries": {
       "aarch64-macos": {
         "path": "bin/aarch64-macos/phpforge-php-tests",
-        "sha256": "c337111b06194cc423e8fa352d82b456c1b074f6d87b63ac8d9c2484730eb7f5"
+        "sha256": "00fd7439887573080dd922d280dc992c7639d3a06e106a7cd0bd7dd98c2918e9"
+      },
+      "x86_64-linux": {
+        "path": "bin/x86_64-linux/phpforge-php-tests",
+        "sha256": "54dc270b5b703a0cdcd54827740242a6dd7dff17a8bae99c1babc13ef509f1ef"
+      },
+      "x86_64-windows": {
+        "path": "bin/x86_64-windows/phpforge-php-tests.exe",
+        "sha256": "ba977e0cdcd20957140b93432448cce858e029204c8571518fc1be0eaee293ff"
       }
     }
   }
