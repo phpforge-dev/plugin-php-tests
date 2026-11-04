@@ -34,6 +34,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run build
       - run: git diff --exit-code -- main.js workbench.js
+      - run: npm run test:ts
       - run: cargo test --locked --manifest-path native/Cargo.toml
       - run: cargo build --release --locked --manifest-path native/Cargo.toml --target ${{ matrix.target }}
       - name: Record platform binary

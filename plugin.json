@@ -21,7 +21,10 @@
     "protocolVersion": 1,
     "methods": [
       "testRun",
-      "testCancel"
+      "testCancel",
+      "testEnvironment",
+      "testConfigRead",
+      "testConfigWrite"
     ],
     "event": "test-progress",
     "workbench": "workbench.js",

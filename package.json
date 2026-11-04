@@ -6,7 +6,9 @@
   "license": "MIT",
   "scripts": {
     "build": "node build.mjs",
-    "test": "cargo test --manifest-path native/Cargo.toml",
+    "test": "npm run test:ts && npm run test:native",
+    "test:ts": "node scripts/test-ts.mjs",
+    "test:native": "cargo test --manifest-path native/Cargo.toml",
     "build:native": "cargo build --release --manifest-path native/Cargo.toml"
   },
   "devDependencies": {

@@ -26,8 +26,8 @@ async fn main(){
   tokio::spawn(async move {
    let _permit=permit;
    if method=="initialize" {let _=tx.send(json!({"id":id,"result":{"protocolVersion":1}})).await;return}
-   let _events:Arc<dyn Fn(Value)+Send+Sync>={let tx=tx.clone();Arc::new(move |event|{if tx.try_send(json!({"method":"tool/event","params":event})).is_err(){eprintln!("Tool event queue full; client must refresh state");}})};
-   let result:workspace::Res<Value>=service.dispatch(&root,&method,&args).await;
+   let events:Arc<dyn Fn(Value)+Send+Sync>={let tx=tx.clone();Arc::new(move |event|{if tx.try_send(json!({"method":"tool/event","params":event})).is_err(){eprintln!("Tool event queue full; client must refresh state");}})};
+   let result:workspace::Res<Value>=service.dispatch(&root,&method,&args,events).await;
    let response=match result{Ok(value)=>json!({"id":id,"result":value}),Err(error)=>json!({"id":id,"error":{"message":error}})};
    let _=tx.send(response).await;
   });
