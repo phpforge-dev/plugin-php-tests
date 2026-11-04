@@ -40,7 +40,7 @@
       },
       "x86_64-windows": {
         "path": "bin/x86_64-windows/phpforge-php-tests.exe",
-        "sha256": "69461111b1127e5bcb8f6b3db29b94533986e60540c05c3223a13bd4e6d53532"
+        "sha256": "8941d084895b0fb1fd80506a1a70deb54b93de8581557d612dc5985fd662f21a"
       }
     }
   }
