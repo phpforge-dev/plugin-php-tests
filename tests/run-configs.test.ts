@@ -45,4 +45,7 @@ test('Rerun Failed: PHPUnit exato com data set; Pest amplia data sets e avisa', 
  assert.deepEqual(failedFilter('phpunit', [{ name: 'testFailsOnPurpose', fqn: 'Tests\\Unit\\CalculatorTest::testFailsOnPurpose' }, { name: 'x', fqn: 'Tests\\Unit\\CalculatorTest::testSums with data set "zero"' }]), { filter: '/(?:Tests\\\\Unit\\\\CalculatorTest::testFailsOnPurpose|Tests\\\\Unit\\\\CalculatorTest::testSums with data set "zero")$/', broadened: false });
  assert.deepEqual(failedFilter('pest', [{ name: 'it a', fqn: 'it a' }]), { filter: 'it a', broadened: false });
  assert.deepEqual(failedFilter('pest', [{ name: 'x', fqn: '`d` → it sums with data set "(0, 0, 0)"' }, { name: 'it b (1)', fqn: 'it b (1)' }]), { filter: '(?:`d` → it sums|it b \\(1\\))', broadened: true });
+ // Um data set isolado (menu da árvore Run): exato no PHPUnit; no Pest o teste inteiro, com aviso.
+ assert.deepEqual(failedFilter('phpunit', [{ name: 'testSums with data set "zero"', fqn: 'Tests\\Unit\\CalculatorTest::testSums with data set "zero"' }]), { filter: '/(?:Tests\\\\Unit\\\\CalculatorTest::testSums with data set "zero")$/', broadened: false });
+ assert.deepEqual(failedFilter('pest', [{ name: 'it counts executions with data set "(\'usd\')"', fqn: 'it counts executions with data set "(\'usd\')"' }]), { filter: 'it counts executions', broadened: true });
 });

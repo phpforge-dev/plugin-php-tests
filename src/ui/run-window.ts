@@ -169,6 +169,48 @@ export function mountRunWindow(options: Options) {
   void start({ ...config, id: s.config.id }, { filter, note: broadened ? tr('Pest não seleciona um data set isolado: os testes com falha foram repetidos com todos os data sets.') : undefined });
  }
 
+ /**
+  * "Executar '…'" no menu de contexto da árvore (DOC: Test Runner tab). PHPUnit roda a identidade exata,
+  * inclusive um data set isolado; o Pest 3.8 compara o filtro só com a descrição montada antes do
+  * data set (conferido no código do Pest em vendor/ e na CLI), então o teste inteiro é repetido com aviso.
+  */
+ function runNode(s: Session, node: TestNode, coverage = false) {
+  if (s.running) return;
+  if (node.kind === 'root') { void start(s.config, { coverage }); return; }
+  const picked = leaves(node).filter(l => l.fqn || l.name);
+  if (!picked.length) return;
+  const { filter, broadened } = failedFilter(s.config.framework, picked);
+  const config = { ...s.config, scope: s.config.scope === 'method' || s.config.scope === 'class' ? 'file' as const : s.config.scope };
+  const name = node.name;
+  void start({ ...config, id: s.config.id }, { coverage, filter, note: broadened ? `${tr('Pest não seleciona um data set isolado: o teste foi repetido com todos os data sets')} (${name.replace(/ with data set .*$/s, '')}).` : undefined });
+ }
+ let treeMenu: HTMLElement | undefined;
+ const closeTreeMenu = () => { treeMenu?.remove(); treeMenu = undefined; };
+ sdk.own(closeTreeMenu);
+ on(document, 'pointerdown', e => { if (treeMenu && !treeMenu.contains(e.target as Node)) closeTreeMenu(); });
+ function openTreeMenu(s: Session, node: TestNode, x: number, y: number) {
+  closeTreeMenu();
+  treeMenu = h('div', { className: 'tool-context-menu pt-gutter-menu', id: 'test-tree-menu', attrs: { role: 'menu' } });
+  const label = node.kind === 'root' ? s.config.name : node.name;
+  const item = (text: string, action: string, run: () => void, shortcut?: string, iconName?: IconName, disabled = false) => {
+   const b = h('button', { type: 'button', disabled, attrs: { role: 'menuitem', 'data-action': action } }, h('span', { className: 'pt-icon-box' }, iconName ? icon(iconName) : ''), h('span', { className: 'pt-menu-label', textContent: text }), shortcut ? h('kbd', { textContent: shortcut }) : '');
+   b.onclick = () => { closeTreeMenu(); run(); };
+   treeMenu!.append(b);
+  };
+  item(`${tr('Executar')} '${label}'`, 'run', () => runNode(s, node), sdk.keymap.shortcut('tests.runContext'), 'run', s.running);
+  item(`${tr('Executar')} '${label}' ${tr('com cobertura')}`, 'coverage', () => runNode(s, node, true), undefined, 'coverage', s.running);
+  treeMenu.append(h('hr'));
+  item(tr('Ir para o código'), 'navigate', () => void navigate(node), /Mac/.test(navigator.platform) ? '⌘↓' : 'F4', undefined, !(node.file || node.children.some(c => c.file)));
+  document.body.append(treeMenu);
+  treeMenu.style.left = Math.min(x, window.innerWidth - treeMenu.offsetWidth - 8) + 'px'; treeMenu.style.top = Math.min(y, window.innerHeight - treeMenu.offsetHeight - 8) + 'px';
+  treeMenu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+  on<KeyboardEvent>(treeMenu, 'keydown', e => {
+   const buttons = [...treeMenu!.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]; const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
+   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); buttons[(i + (e.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length]?.focus(); }
+   if (e.key === 'Escape') { e.preventDefault(); closeTreeMenu(); treeEl.focus(); }
+  });
+ }
+
  // --- Auto-test ------------------------------------------------------------------------------
  let autoTimer: ReturnType<typeof setTimeout> | undefined;
  sdk.own(() => clearTimeout(autoTimer));
@@ -251,6 +293,7 @@ export function mountRunWindow(options: Options) {
    row.append(chevron, icon(statusIcon[status]), h('span', { className: 'pt-row-name', textContent: node.name }), h('span', { className: 'pt-row-time', textContent: time !== undefined && status !== 'running' && status !== 'pending' && (node.kind !== 'root' || !s.running) ? formatDuration(time) : '' }));
    row.onclick = () => { s.selected = node.id; render(); };
    row.ondblclick = () => void navigate(node);
+   row.oncontextmenu = e => { e.preventDefault(); s.selected = node.id; render(); openTreeMenu(s, node, e.clientX, e.clientY); };
    return row;
   }));
   renderConsole(s);
@@ -339,7 +382,10 @@ export function mountRunWindow(options: Options) {
   if (e.key === 'ArrowDown') move(i + 1); else if (e.key === 'ArrowUp') move(i - 1);
   else if (e.key === 'ArrowRight' && node?.children.length) { if (!s.expanded.has(node.id)) toggle(s, node); else move(i + 1); }
   else if (e.key === 'ArrowLeft' && node) { if (s.expanded.has(node.id) && node.children.length) toggle(s, node); else if (node.parent) { s.selected = node.parent.id; render(); } }
-  else if ((e.key === 'Enter' || e.key === 'F4') && node) void navigate(node);
+  else if ((e.key === 'Enter' || e.key === 'F4' || (e.metaKey && e.key === 'ArrowDown')) && node) void navigate(node);
+  // ⌃⇧R (macOS) / Ctrl+Shift+F10: executa o nó selecionado; Shift+F10 / ContextMenu abre o menu.
+  else if (node && ((e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'r') || (e.ctrlKey && e.shiftKey && e.key === 'F10'))) { e.stopPropagation(); runNode(s, node); }
+  else if (node && (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) { const r = treeEl.querySelector('[aria-selected=true]')?.getBoundingClientRect(); openTreeMenu(s, node, r?.left ?? 0, r?.bottom ?? 0); }
   else return;
   e.preventDefault();
  });
