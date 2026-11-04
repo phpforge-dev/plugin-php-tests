@@ -29,7 +29,8 @@ export async function visibleDatasets(path: string, text: string, files: Project
 
 // --- expect() ------------------------------------------------------------------------------
 export type Member = { name: string; kind: 'method' | 'property'; signature: string; returns: string; doc?: string };
-type Chain = { valueType: string; negated: boolean; each: boolean; prefix: string; from: number; higherOrder?: string };
+/** `span`: tokens (de `tokens`) da expressão cujo tipo a expectativa carrega (argumento de `expect`/último `and`). */
+export type Chain = { valueType: string; negated: boolean; each: boolean; prefix: string; from: number; higherOrder?: string; span: [number, number]; tokens: PhpToken[]; source: string };
 
 const matchingBack = (tokens: PhpToken[], close: number) => { let depth = 0; for (let i = close; i >= 0; i--) { const v = tokens[i].value; if (tokens[i].type !== 'punct') continue; if (v === ')' || v === ']') depth++; else if (v === '(' || v === '[') { depth--; if (!depth) return i; } } return -1; };
 const matching = (tokens: PhpToken[], open: number) => { let depth = 0; for (let i = open; i < tokens.length; i++) { const v = tokens[i].value; if (tokens[i].type !== 'punct') continue; if (v === '(' || v === '[') depth++; else if (v === ')' || v === ']') { depth--; if (!depth) return i; } } return tokens.length; };
@@ -87,16 +88,16 @@ export function expectChain(text: string, offset: number): Chain | null {
    const callee = tokens[open - 1];
    if (callee.type !== 'word') return null;
    if (callee.value === 'expect' && tokens[open - 2]?.value !== '->' && tokens[open - 2]?.value !== '::') {
-    let type = inferType(before, tokens, open + 1, j);
+    let type = inferType(before, tokens, open + 1, j); let span: [number, number] = [open + 1, j];
     let negated = false; let each = false; let higherOrder: string | undefined;
     for (const link of links.reverse()) {
      if (link.name === 'not') { negated = true; continue; }
      if (link.name === 'each') { each = true; continue; }
-     if (link.name === 'and' && link.args) { type = inferType(before, tokens, link.args[0], link.args[1]); negated = false; each = false; higherOrder = undefined; continue; }
+     if (link.name === 'and' && link.args) { type = inferType(before, tokens, link.args[0], link.args[1]); span = link.args; negated = false; each = false; higherOrder = undefined; continue; }
      if (!link.args && link.name !== 'not' && link.name !== 'each') higherOrder = higherOrder ? `${higherOrder}->${link.name}` : link.name;
      else negated = false;
     }
-    return { valueType: type, negated, each, prefix: word, from: offset - word.length, higherOrder };
+    return { valueType: type, negated, each, prefix: word, from: offset - word.length, higherOrder, span, tokens, source: before.slice(0, before.length - word.length) };
    }
    if (tokens[open - 2]?.value !== '->') return null;
    links.push({ name: callee.value, args: [open + 1, j] });
@@ -134,16 +135,7 @@ export async function expectationMembers(files: ProjectFiles): Promise<Member[]>
  return members;
 }
 
-/** Arquivo de uma classe pelo autoload PSR-4 do composer.json (projeto). */
-export async function classFile(fqn: string, files: ProjectFiles): Promise<string | null> {
- const json = await files.read('composer.json').then(t => t ? JSON.parse(t) : {}).catch(() => ({}));
- const maps = { ...(json.autoload?.['psr-4'] ?? {}), ...(json['autoload-dev']?.['psr-4'] ?? {}) } as Record<string, string | string[]>;
- for (const [prefix, dirs] of Object.entries(maps).sort((a, b) => b[0].length - a[0].length)) {
-  if (!fqn.startsWith(prefix)) continue;
-  for (const dir of [dirs].flat()) { const path = `${dir.replace(/\/$/, '')}/${fqn.slice(prefix.length).replace(/\\/g, '/')}.php`.replace(/^\.\//, ''); if (await files.exists(path)) return path; }
- }
- return null;
-}
+export { classFile } from './pest-context';
 
 /** Rótulo do tipo da expectativa, como no hover/completar: `Expectation<App\Formatter>`. */
 export const expectationType = (chain: Pick<Chain, 'valueType' | 'negated' | 'each'>) => `${chain.each ? 'EachExpectation' : chain.negated ? 'OppositeExpectation' : 'Expectation'}<${chain.valueType}>`;

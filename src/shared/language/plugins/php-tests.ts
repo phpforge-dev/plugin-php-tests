@@ -1,7 +1,8 @@
 import { CompletionKind, type CodeCompletion, type CodeSite, type IdePlugin, type PluginCompletion, type PluginLocation, type ProjectFiles, type StringSite } from './api';
 import { isTestFile, type TestFramework } from '../php-tests';
-import { classFile, datasetsIn, expectChain, expectationMembers, expectationType, membersOf, visibleDatasets } from '../pest';
-import { position } from '../php-source';
+import { datasetsIn, expectChain, expectationMembers, expectationType, visibleDatasets, type Chain } from '../pest';
+import { classMembers, customExpectations, pestSources, testCaseClasses, typeOf, type Source } from '../pest-context';
+import { codeOnly, position } from '../php-source';
 
 /** Argumento do comando `php-ide.runTests`: arquivo relativo, filtro (vazio = arquivo inteiro) e rótulo do painel. */
 export type TestRunRequest = { framework: TestFramework; path: string; filter: string; label: string };
@@ -55,30 +56,75 @@ export class PhpTestsPlugin implements IdePlugin {
   }));
  }
 
- /** Depois de `expect(…)->`: métodos da expectativa, `not`/`each`/`and` e membros do valor (higher order). */
+ /** Tipo do valor da cadeia, inclusive retorno de chamadas e `$this` de `uses()->in()`. */
+ private async valueType(chain: Chain, site: CodeSite, files: ProjectFiles, sources: Source[]): Promise<string> {
+  const deep = await typeOf({ path: site.path, text: chain.source, files, sources }, chain.tokens, chain.span[0], chain.span[1]).catch(() => 'mixed');
+  return deep !== 'mixed' ? deep : chain.valueType;
+ }
+
+ /**
+  * Depois de `expect(…)->`: métodos da expectativa (do pacote em vendor/ e os de `expect()->extend`),
+  * `not`/`each`/`and` e membros do valor (higher order). Depois de `$this->` num teste Pest: membros da
+  * classe ligada por `uses()`/`pest()->extend()->in()` (observado no PhpStorm 2026.1.4).
+  */
  async completeCode(site: CodeSite, files: ProjectFiles): Promise<CodeCompletion | null> {
   if (this.framework !== 'pest' || !isTestFile(site.path)) return null;
   const chain = expectChain(site.text, site.offset);
-  if (!chain) return null;
+  if (!chain) return this.completeThis(site, files);
+  const sources = await pestSources(files);
+  chain.valueType = await this.valueType(chain, site, files, sources);
   const type = expectationType(chain);
   const items: CodeCompletion['items'] = [];
-  if (!chain.higherOrder) for (const m of await expectationMembers(files)) {
-   if (chain.negated && ['not', 'and', 'each'].includes(m.name)) continue;
-   items.push({ label: m.name, kind: m.kind === 'method' ? CompletionKind.Method : CompletionKind.Property, insertText: m.kind === 'method' ? `${m.name}(` : m.name, detail: m.doc, labelDetails: { detail: m.kind === 'method' ? m.signature.slice(m.name.length) : '', description: m.name === 'and' ? 'Expectation' : m.returns === 'self' || m.returns === 'static' ? type : m.returns } });
+  if (!chain.higherOrder) {
+   const seen = new Set<string>();
+   for (const m of await expectationMembers(files)) {
+    if (chain.negated && ['not', 'and', 'each'].includes(m.name)) continue;
+    seen.add(m.name);
+    items.push({ label: m.name, kind: m.kind === 'method' ? CompletionKind.Method : CompletionKind.Property, insertText: m.kind === 'method' ? `${m.name}(` : m.name, detail: m.doc, labelDetails: { detail: m.kind === 'method' ? m.signature.slice(m.name.length) : '', description: m.name === 'and' ? 'Expectation' : m.returns === 'self' || m.returns === 'static' ? type : m.returns } });
+   }
+   // Expectativas customizadas: `expect()->extend('nome', function (...) {...})`.
+   for (const e of [...sources, { path: site.path, text: site.text }].flatMap(src => customExpectations(src.path, src.text))) {
+    if (seen.has(e.name)) continue; seen.add(e.name);
+    items.push({ label: e.name, kind: CompletionKind.Method, insertText: `${e.name}(`, detail: `expect()->extend('${e.name}') · ${e.path}`, labelDetails: { detail: `(${e.params})`, description: type } });
+   }
   }
   // Higher order expectations: propriedades/métodos públicos do objeto testado.
   if (!chain.each && /\\|^[A-Z]/.test(chain.valueType) && !chain.higherOrder) {
-   const path = await classFile(chain.valueType, files);
-   const text = path ? await files.read(path) : null;
-   for (const m of text ? membersOf(text) : []) items.push({ label: m.name, kind: m.kind === 'method' ? CompletionKind.Method : CompletionKind.Property, insertText: m.kind === 'method' ? `${m.name}(` : m.name, detail: `${chain.valueType}::${m.signature}`, labelDetails: { detail: m.kind === 'method' ? m.signature.slice(m.name.length) : '', description: `→ Expectation<${m.returns}>` } });
-   for (const m of text ? [...text.matchAll(/public\s+(?:readonly\s+)?([?\\\w]+)\s+\$(\w+)/g)] : []) items.push({ label: m[2], kind: CompletionKind.Property, detail: `${chain.valueType}::$${m[2]}`, labelDetails: { description: `→ Expectation<${m[1]}>` } });
+   for (const m of (await classMembers(chain.valueType, files)).filter(m => m.visibility === 'public' && !m.static)) items.push({ label: m.name, kind: m.kind === 'method' ? CompletionKind.Method : CompletionKind.Property, insertText: m.kind === 'method' ? `${m.name}(` : m.name, detail: `${m.owner}::${m.kind === 'method' ? `${m.name}(${m.params})` : '$' + m.name}`, labelDetails: { detail: m.kind === 'method' ? `(${m.params})` : '', description: `→ Expectation<${m.returns}>` } });
   }
   if (!items.length) return null;
   return { from: chain.from, items };
  }
 
+ /** `$this->` dentro de um arquivo de teste Pest: membros das classes de `uses()->in()`. */
+ private async completeThis(site: CodeSite, files: ProjectFiles): Promise<CodeCompletion | null> {
+  const before = site.text.slice(0, site.offset);
+  const m = /\$this\s*->\s*(\w*)$/.exec(before);
+  if (!m || !/->\s*\w*$/.test(codeOnly(before))) return null;
+  const sources = await pestSources(files);
+  const classes = testCaseClasses(site.path, site.text, sources);
+  const items: CodeCompletion['items'] = []; const seen = new Set<string>();
+  for (const fqn of classes) for (const member of await classMembers(fqn, files)) {
+   if (member.static || seen.has(member.kind + member.name)) continue; seen.add(member.kind + member.name);
+   items.push({ label: member.name, kind: member.kind === 'method' ? CompletionKind.Method : CompletionKind.Property, insertText: member.kind === 'method' ? `${member.name}(` : member.name, detail: `${member.owner}::${member.name}`, labelDetails: { detail: member.kind === 'method' ? `(${member.params})` : '', description: member.returns } });
+  }
+  return items.length ? { from: site.offset - m[1].length, items } : null;
+ }
+
+ /** Ir para a declaração de uma expectativa customizada (`->toBeOne(` → `expect()->extend('toBeOne', …)`). */
+ async defineCode(site: CodeSite, files: ProjectFiles): Promise<PluginLocation[] | null> {
+  if (this.framework !== 'pest' || !isTestFile(site.path)) return null;
+  const left = /\w*$/.exec(site.text.slice(0, site.offset))![0]; const right = /^\w*/.exec(site.text.slice(site.offset))![0];
+  const name = left + right; const start = site.offset - left.length;
+  if (!name || !/->\s*$/.test(site.text.slice(0, start)) || site.text[start + name.length] !== '(') return null;
+  const sources = await pestSources(files);
+  const found = [...customExpectations(site.path, site.text).map(e => ({ e, text: site.text })), ...sources.flatMap(src => customExpectations(src.path, src.text).map(e => ({ e, text: src.text })))].filter(x => x.e.name === name);
+  if (!found.length) return null;
+  return found.map(({ e, text }) => ({ uri: files.uri(e.path), range: { start: position(text, e.offset), end: position(text, e.end) } }));
+ }
+
  /** Hover em `expect` mostra o tipo da expectativa criada. */
- async hover(site: CodeSite): Promise<Hover | null> {
+ async hover(site: CodeSite, files?: ProjectFiles): Promise<Hover | null> {
   if (this.framework !== 'pest' || !isTestFile(site.path)) return null;
   const at = /\bexpect\s*\(/g; let m: RegExpExecArray | null;
   while ((m = at.exec(site.text))) {
@@ -87,6 +133,7 @@ export class PhpTestsPlugin implements IdePlugin {
    for (; i < site.text.length; i++) { const c = site.text[i]; if (c === '(') depth++; else if (c === ')' && !--depth) break; }
    const chain = expectChain(site.text.slice(0, i + 1) + '->', i + 3);
    if (!chain) return null;
+   if (files) chain.valueType = await this.valueType(chain, site, files, await pestSources(files));
    return { contents: '```php\n' + `function expect(mixed $value): ${expectationType(chain)}` + '\n```', range: { start: position(site.text, m.index), end: position(site.text, m.index + 6) } };
   }
   return null;
