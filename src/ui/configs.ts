@@ -3,7 +3,7 @@
 import { addTemporary, defaultName, normalize, persisted, scopeLabels, validate, type ConfigStore, type RunConfiguration, type RunScope } from '../shared/language/run-configs';
 import type { TestFramework } from '../shared/language/php-tests';
 import { h, on, sdk, tr } from './sdk';
-import { icon } from './icons';
+import { icon, icons } from './icons';
 
 export type Configs = ReturnType<typeof mountConfigs>;
 type Options = {
@@ -32,30 +32,36 @@ export function mountConfigs(options: Options) {
   finally { changed(); }
  }
 
- // --- Widget da barra superior -------------------------------------------------------------
+ // --- Widget Run da barra superior -----------------------------------------------------------
+ // O host (0.2.20+) mostra um único seletor com os tipos de todos os plugins, como a referência;
+ // este plugin entra como o tipo PHPUnit/Pest. Sem configuração escolhida, o botão Run do host
+ // executa os testes do arquivo atual por este plugin.
  const widget = document.querySelector<HTMLElement>('.run-widget');
- const hostLabel = widget?.querySelector<HTMLElement>('.run-config');
  const hostRun = widget?.querySelector<HTMLButtonElement>('#run-current');
- const selector = h('button', { id: 'run-config-select', type: 'button', className: 'pt-config-select', attrs: { 'aria-haspopup': 'menu', 'aria-expanded': 'false' } });
- const runButton = h('button', { id: 'run-config-run', type: 'button', className: 'pt-config-run' });
- runButton.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3.2v9.6L12.6 8z" fill="currentColor"/></svg>';
- if (widget && hostLabel) {
-  hostLabel.hidden = true; hostLabel.before(selector);
-  if (hostRun) { hostRun.hidden = true; hostRun.after(runButton); }
-  sdk.own(() => { selector.remove(); runButton.remove(); hostLabel.hidden = false; if (hostRun) hostRun.hidden = false; });
- }
+ const selector = h('button', { id: 'run-config-select', type: 'button', className: 'pt-config-select' }); // âncora do popup ⌃⌥R
+ const frameworkName = (c: RunConfiguration) => c.framework === 'pest' ? 'Pest' : 'PHPUnit';
+ sdk.provide?.('runConfigurations:php-tests', {
+  type: 'php-tests', label: 'PHPUnit / Pest', icon: icons.phpunit,
+  list: () => store.configurations.map(c => ({ id: c.id, name: c.name, temporary: c.temporary, description: frameworkName(c) })),
+  run: (id: string) => { const c = store.configurations.find(x => x.id === id); if (c) { store.selected = id; changed(); options.run(c); } },
+  edit: (id?: string) => edit(id),
+  save: (id: string) => { const c = store.configurations.find(x => x.id === id); if (c) void saveTemporary(c); },
+  select: (id: string | undefined) => { if (store.selected === id) return; store.selected = id; changed(); void save(); },
+  selected: () => store.selected,
+  // Uma seleção nova feita aqui (temporária do gutter, popup ⌃⌥R) é repassada para o seletor do host.
+  onChange: (fn: (select?: string) => void) => { let last = store.selected; const listener = () => { const now = store.selected; const moved = now !== last; last = now; fn(moved ? now : undefined); }; listeners.add(listener); return () => listeners.delete(listener); },
+ });
+ const runCurrent = (event: Event) => { if (hostRun?.dataset.runConfig) return; const current = options.currentFile(); if (current) { event.stopPropagation(); current(); } };
+ if (hostRun) { hostRun.addEventListener('click', runCurrent); sdk.own(() => hostRun.removeEventListener('click', runCurrent)); }
+ const hostOriginal = hostRun ? { disabled: hostRun.disabled, title: hostRun.title, aria: hostRun.getAttribute('aria-label') ?? '' } : undefined;
  function paint() {
-  const c = selected();
-  const current = !c ? options.currentFile() : null;
-  selector.replaceChildren(c ? icon(c.framework) : document.createTextNode(''), h('span', { className: 'pt-config-name', textContent: c ? c.name : tr('Arquivo atual') }), icon('down'));
-  selector.classList.toggle('pt-temporary', !!c?.temporary);
-  selector.title = c ? `${c.name}${c.temporary ? tr(' (temporária)') : ''}` : tr('Arquivo atual');
-  const label = c ? `${tr('Executar')} '${c.name}'` : current ? tr('Executar os testes do arquivo atual') : tr('Executar arquivo atual: abra um arquivo de teste ou escolha uma configuração');
+  if (!hostRun || !hostOriginal || hostRun.dataset.runConfig) return;
+  const current = options.currentFile();
+  const label = current ? tr('Executar os testes do arquivo atual') : hostOriginal.aria;
   const key = sdk.keymap.shortcut('tests.runSelected');
-  runButton.title = label + (key ? ` · ${key}` : ''); runButton.setAttribute('aria-label', label);
-  runButton.disabled = !c && !current;
+  hostRun.disabled = current ? false : hostOriginal.disabled;
+  hostRun.title = current ? label + (key ? ` · ${key}` : '') : hostOriginal.title; hostRun.setAttribute('aria-label', label);
  }
- runButton.onclick = () => runSelected();
  function runSelected() { const c = selected(); if (c) options.run(c); else options.currentFile()?.(); }
 
  // --- Popup de configurações ---------------------------------------------------------------
@@ -102,7 +108,6 @@ export function mountConfigs(options: Options) {
    const mnemonic = menu?.querySelector<HTMLButtonElement>(`[data-mnemonic="${e.key}"]`); if (mnemonic) { e.preventDefault(); mnemonic.click(); }
   });
  }
- selector.onclick = () => menu ? closeMenu() : openMenu();
  on(document, 'pointerdown', e => { if (menu && !menu.contains(e.target as Node) && !selector.contains(e.target as Node)) closeMenu(); });
  async function saveTemporary(c: RunConfiguration) { delete c.temporary; await save(); }
 
