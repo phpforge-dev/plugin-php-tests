@@ -4,7 +4,7 @@
 // Ações e rótulos seguem a ajuda pública "Test Runner tab" da referência.
 import { RunTree, counts, failureLine, formatDuration, leaves, total, type NodeStatus, type TestNode } from '../shared/language/teamcity';
 import { discoverTests, parseJunit, type TestCase } from '../shared/language/php-tests';
-import { planFor, type CoverageEngine, type RunConfiguration } from '../shared/language/run-configs';
+import { failedFilter, planFor, type CoverageEngine, type RunConfiguration } from '../shared/language/run-configs';
 import { h, on, sdk, tr, type RunOutput } from './sdk';
 import { icon, icons, type IconName } from './icons';
 
@@ -21,6 +21,7 @@ type Options = {
  /** Cobertura pedida mas indisponível: devolve o mecanismo ou explica por que não há. */
  engine(config: RunConfiguration): Promise<CoverageEngine | string>;
 };
+const AUTO_TEST_DELAY = 3000;
 const statusIcon: Record<NodeStatus, IconName> = { passed: 'passed', failed: 'failed', error: 'failed', ignored: 'ignored', terminated: 'terminated', running: 'running', pending: 'pending' };
 
 export function mountRunWindow(options: Options) {
@@ -159,6 +160,26 @@ export function mountRunWindow(options: Options) {
  }
  async function cancel(s: Session) { if (s.running && s.runId) await sdk.api.testCancel(s.runId).catch(error => { s.error = String(error); }); }
  function rerunSession(s = active) { if (s) void start(s.config, { coverage: !!s.coverage }); }
+ function rerunFailedSession(s = active) {
+  if (!s || s.running) return;
+  const failed = leaves(s.tree.root).filter(l => l.status === 'failed' || l.status === 'error');
+  if (!failed.length) return;
+  const { filter, broadened } = failedFilter(s.config.framework, failed);
+  const config = { ...s.config, scope: s.config.scope === 'method' || s.config.scope === 'class' ? 'file' as const : s.config.scope };
+  void start({ ...config, id: s.config.id }, { filter, note: broadened ? tr('Pest não seleciona um data set isolado: os testes com falha foram repetidos com todos os data sets.') : undefined });
+ }
+
+ // --- Auto-test ------------------------------------------------------------------------------
+ let autoTimer: ReturnType<typeof setTimeout> | undefined;
+ sdk.own(() => clearTimeout(autoTimer));
+ on<CustomEvent>(window, 'ide-workspace-file-changed', event => {
+  const path = String(event.detail?.path ?? '');
+  if (!path.endsWith('.php') || path.includes('/vendor/') || !sessions.some(s => s.autoTest)) return;
+  discovered.delete(path.startsWith(root + '/') ? path.slice(root.length + 1) : path);
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(() => { for (const s of sessions) if (s.autoTest && !s.running) void start(s.config, { coverage: !!s.coverage }); }, AUTO_TEST_DELAY);
+ });
+
  // --- Renderização ---------------------------------------------------------------------------
  const walk = (n: TestNode): TestNode[] => [n, ...n.children.flatMap(walk)];
  function select(s: Session) { active = s; }
@@ -332,7 +353,9 @@ export function mountRunWindow(options: Options) {
   if (next) { s.selected = next.id; render(); revealSelected(); void navigate(next); }
  }
  rerun.onclick = () => rerunSession();
+ rerunFailed.onclick = () => rerunFailedSession();
  stop.onclick = () => { if (active) void cancel(active); };
+ autoTest.onclick = () => { if (!active) return; active.autoTest = !active.autoTest; render(); sdk.host.status(active.autoTest ? tr('Auto-test ativado: os testes rodam de novo 3 s após salvar um arquivo PHP.') : tr('Auto-test desativado')); };
  showPassed.onclick = () => { prefs.passed = !prefs.passed; savePrefs(); render(); };
  showIgnored.onclick = () => { prefs.ignored = !prefs.ignored; savePrefs(); render(); };
  sortAlpha.onclick = () => { prefs.alpha = !prefs.alpha; if (prefs.alpha) prefs.duration = false; savePrefs(); render(); };
@@ -349,7 +372,7 @@ export function mountRunWindow(options: Options) {
  render();
 
  return {
-  start, show, rerun: () => rerunSession() stop: () => { if (active) void cancel(active); },
+  start, show, rerun: () => rerunSession(), rerunFailed: () => rerunFailedSession(), stop: () => { if (active) void cancel(active); },
   active: () => active, sessions: () => sessions, running: () => sessions.some(s => s.running),
   reset() { for (const s of sessions) void cancel(s); sessions.length = 0; active = undefined; discovered.clear(); root = ''; render(); hideWindow(); },
   invalidate(path: string) { discovered.delete(path); },

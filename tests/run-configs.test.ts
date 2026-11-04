@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addTemporary, defaultName, fromTest, normalize, persisted, planFor, splitOptions, validate, TEMPORARY_LIMIT, type ConfigStore } from '../src/shared/language/run-configs';
+import { addTemporary, defaultName, failedFilter, fromTest, normalize, persisted, planFor, splitOptions, validate, TEMPORARY_LIMIT, type ConfigStore } from '../src/shared/language/run-configs';
 
 test('nomes padrão por escopo', () => {
  assert.equal(defaultName({ framework: 'phpunit', scope: 'method', path: 'tests/Unit/CalculatorTest.php', className: 'Tests\\Unit\\CalculatorTest', method: 'testSums' }), 'CalculatorTest::testSums');
@@ -41,3 +41,8 @@ test('temporárias: reaproveita o mesmo alvo, limite e só as salvas vão para o
  assert.deepEqual(normalize({ configurations: [{ id: 1 }, { id: 'a', name: 'A', framework: 'x', scope: 'file', path: '' }, ...persisted(store).configurations] }).configurations.length, 1);
 });
 
+test('Rerun Failed: PHPUnit exato com data set; Pest amplia data sets e avisa', () => {
+ assert.deepEqual(failedFilter('phpunit', [{ name: 'testFailsOnPurpose', fqn: 'Tests\\Unit\\CalculatorTest::testFailsOnPurpose' }, { name: 'x', fqn: 'Tests\\Unit\\CalculatorTest::testSums with data set "zero"' }]), { filter: '/(?:Tests\\\\Unit\\\\CalculatorTest::testFailsOnPurpose|Tests\\\\Unit\\\\CalculatorTest::testSums with data set "zero")$/', broadened: false });
+ assert.deepEqual(failedFilter('pest', [{ name: 'it a', fqn: 'it a' }]), { filter: 'it a', broadened: false });
+ assert.deepEqual(failedFilter('pest', [{ name: 'x', fqn: '`d` → it sums with data set "(0, 0, 0)"' }, { name: 'it b (1)', fqn: 'it b (1)' }]), { filter: '(?:`d` → it sums|it b \\(1\\))', broadened: true });
+});

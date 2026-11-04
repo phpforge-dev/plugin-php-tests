@@ -121,3 +121,19 @@ export function normalize(value: unknown): ConfigStore {
  return { version: 1, selected: typeof raw.selected === 'string' ? raw.selected : undefined, configurations };
 }
 
+/**
+ * Filtro de "Rerun Failed Tests" a partir dos testes com falha da última execução.
+ * PHPUnit: identidade exata, inclusive o data set. Pest: o filtro casa com a descrição e não
+ * seleciona um data set isolado (observado no Pest 3.8), então o teste inteiro é repetido e
+ * `broadened` avisa a interface.
+ */
+export function failedFilter(framework: TestFramework, failed: { name: string; fqn?: string }[]): { filter: string; broadened: boolean } {
+ const esc = (v: string) => v.replace(/[\\^$.*+?()[\]{}|/#]/g, '\\$&');
+ if (framework === 'phpunit') {
+  const ids = [...new Set(failed.map(f => f.fqn ?? f.name))];
+  return { filter: `/(?:${ids.map(esc).join('|')})$/`, broadened: false };
+ }
+ const names = failed.map(f => f.fqn ?? f.name);
+ const plain = [...new Set(names.map(n => n.replace(/ with data set .*$/s, '')))];
+ return { filter: plain.length === 1 ? pestFilter(plain[0]) : `(?:${plain.map(pestFilter).join('|')})`, broadened: names.some(n => / with data set /.test(n)) };
+}
