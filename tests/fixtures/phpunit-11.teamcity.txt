@@ -1,0 +1,73 @@
+PHPUnit 11.5.57 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.3.36
+Configuration: /projeto/phpunit.xml
+
+##teamcity[testCount count='9' flowId='56505']
+##teamcity[testSuiteStarted name='CLI Arguments' flowId='56505']
+##teamcity[testSuiteStarted name='Tests\Unit\CalculatorTest' locationHint='php_qn:///projeto/tests/Unit/CalculatorTest.php::\Tests\Unit\CalculatorTest' flowId='56505']
+##teamcity[testStarted name='testAddsNumbers' locationHint='php_qn:///projeto/tests/Unit/CalculatorTest.php::\Tests\Unit\CalculatorTest::testAddsNumbers' flowId='56505']
+##teamcity[testFinished name='testAddsNumbers' duration='14' flowId='56505']
+##teamcity[testStarted name='divides_numbers' locationHint='php_qn:///projeto/tests/Unit/CalculatorTest.php::\Tests\Unit\CalculatorTest::divides_numbers' flowId='56505']
+##teamcity[testFinished name='divides_numbers' duration='0' flowId='56505']
+##teamcity[testStarted name='testFailsOnPurpose' locationHint='php_qn:///projeto/tests/Unit/CalculatorTest.php::\Tests\Unit\CalculatorTest::testFailsOnPurpose' flowId='56505']
+##teamcity[testFailed name='testFailsOnPurpose' message='Failed asserting that 4 is identical to 5.' details='/projeto/tests/Unit/CalculatorTest.php:26|n' duration='28' flowId='56505']
+##teamcity[testFinished name='testFailsOnPurpose' duration='28' flowId='56505']
+##teamcity[testSuiteStarted name='testSums' locationHint='php_qn:///projeto/tests/Unit/CalculatorTest.php::\Tests\Unit\CalculatorTest::testSums' flowId='56505']
+##teamcity[testStarted name='testSums with data set "zero"' locationHint='php_qn:///projeto/tests/Unit/CalculatorTest.php::\Tests\Unit\CalculatorTest::testSums with data set "zero"' flowId='56505']
+##teamcity[testFinished name='testSums with data set "zero"' duration='0' flowId='56505']
+##teamcity[testStarted name='testSums with data set "positivos"' locationHint='php_qn:///projeto/tests/Unit/CalculatorTest.php::\Tests\Unit\CalculatorTest::testSums with data set "positivos"' flowId='56505']
+##teamcity[testFinished name='testSums with data set "positivos"' duration='1' flowId='56505']
+##teamcity[testSuiteFinished name='testSums' flowId='56505']
+##teamcity[testStarted name='testSkipped' locationHint='php_qn:///projeto/tests/Unit/CalculatorTest.php::\Tests\Unit\CalculatorTest::testSkipped' flowId='56505']
+##teamcity[testIgnored name='testSkipped' message='Ainda não suportado' duration='1' flowId='56505']
+##teamcity[testFinished name='testSkipped' duration='1' flowId='56505']
+##teamcity[testSuiteFinished name='Tests\Unit\CalculatorTest' flowId='56505']
+##teamcity[testSuiteStarted name='Tests\Unit\ComparisonTest' locationHint='php_qn:///projeto/tests/Unit/ComparisonTest.php::\Tests\Unit\ComparisonTest' flowId='56505']
+##teamcity[testStarted name='testFormatsMoney' locationHint='php_qn:///projeto/tests/Unit/ComparisonTest.php::\Tests\Unit\ComparisonTest::testFormatsMoney' flowId='56505']
+##teamcity[testFinished name='testFormatsMoney' duration='0' flowId='56505']
+##teamcity[testStarted name='testComparesLists' locationHint='php_qn:///projeto/tests/Unit/ComparisonTest.php::\Tests\Unit\ComparisonTest::testComparesLists' flowId='56505']
+##teamcity[testFailed name='testComparesLists' message='Failed asserting that two arrays are equal.' details='/projeto/tests/Unit/ComparisonTest.php:18|n' duration='6' type='comparisonFailure' actual='Array (|n    0 => |'ana|'|n    1 => |'bruna|'|n    2 => |'carla|'|n)' expected='Array (|n    0 => |'ana|'|n    1 => |'bruno|'|n    2 => |'carla|'|n)' flowId='56505']
+##teamcity[testFinished name='testComparesLists' duration='6' flowId='56505']
+##teamcity[testStarted name='testComparesText' locationHint='php_qn:///projeto/tests/Unit/ComparisonTest.php::\Tests\Unit\ComparisonTest::testComparesText' flowId='56505']
+##teamcity[testFailed name='testComparesText' message='Failed asserting that two strings are identical.' details='/projeto/tests/Unit/ComparisonTest.php:24|n' duration='0' type='comparisonFailure' actual='|'linha 1|nlinha dois|'' expected='|'linha 1|nlinha 2|'' flowId='56505']
+saída do teste
+##teamcity[testFinished name='testComparesText' duration='1' flowId='56505']
+##teamcity[testSuiteFinished name='Tests\Unit\ComparisonTest' flowId='56505']
+##teamcity[testSuiteFinished name='CLI Arguments' flowId='56505']
+Time: 00:00.066, Memory: 8.00 MB
+
+There were 3 failures:
+
+1) Tests\Unit\CalculatorTest::testFailsOnPurpose
+Failed asserting that 4 is identical to 5.
+
+/projeto/tests/Unit/CalculatorTest.php:26
+
+2) Tests\Unit\ComparisonTest::testComparesLists
+Failed asserting that two arrays are equal.
+--- Expected
++++ Actual
+@@ @@
+ Array (
+     0 => 'ana'
+-    1 => 'bruno'
++    1 => 'bruna'
+     2 => 'carla'
+ )
+
+/projeto/tests/Unit/ComparisonTest.php:18
+
+3) Tests\Unit\ComparisonTest::testComparesText
+Failed asserting that two strings are identical.
+--- Expected
++++ Actual
+@@ @@
+ 'linha 1
+-linha 2'
++linha dois'
+
+/projeto/tests/Unit/ComparisonTest.php:24
+
+FAILURES!
+Tests: 9, Assertions: 8, Failures: 3, Skipped: 1.
