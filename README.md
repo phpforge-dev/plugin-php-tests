@@ -24,12 +24,23 @@ Use Node only to build browser assets and Rust to build the tool. There is no No
 ```sh
 npm ci --ignore-scripts
 npm run build
-cargo test --manifest-path native/Cargo.toml
+npm test            # TypeScript (esbuild + node:test) and Rust tests
 cargo build --release --manifest-path native/Cargo.toml
 node scripts/record-binary.mjs
 ```
 
 The workflow tests and publishes prebuilt macOS arm64, Windows x64 and Linux x64 executables. A build succeeding is not a claim of full native UI validation on that OS. Unsupported platforms show a setup error; there is no fallback to a hidden built-in service.
+
+## Features
+
+- **Run configurations**: selector in the IDE's Run widget (temporary configurations from editor actions, saved ones in `.php-ide/run-configurations.json`), edit dialog with test scope, alternative configuration file, runner options and preferred coverage engine.
+- **Gutter**: ▶ per test/class (PHPUnit) or test/describe (Pest) with the last result (passed, failed, ignored) and a menu: Run, Run with Coverage, Modify Run Configuration.
+- **Run window**: tabs per configuration, live tree from `--teamcity` messages, console per selection, Esperado × Obtido diff for comparison failures, filters, sorting and failed-test navigation.
+- **Rerun Failed Tests** (exact identities for PHPUnit, whole test for Pest data sets) and **auto-test** (3 s after a PHP file changes).
+- **Coverage** with Xdebug or PCOV: Clover report, gutter marks and a Coverage window with class/method/line percentages.
+- **Pest**: completion and go to declaration of datasets in `->with('…')`; `expect()` member completion with the expectation type and higher order members.
+
+The native service methods are `testRun`, `testCancel`, `testEnvironment`, `testConfigRead` and `testConfigWrite`.
 
 ## Validation scope
 
