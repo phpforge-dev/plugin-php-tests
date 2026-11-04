@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { RunTree, counts, failureLine, formatDuration, leaves, parseLocation, parseMessage, total } from '../src/shared/language/teamcity';
 
 const fixture = (name: string) => readFileSync(join(process.env.PHP_TESTS_FIXTURES!, name), 'utf8');
+const crlf = (text: string) => text.replace(/\r?\n/g, '\r\n');
 const build = (text: string) => { const tree = new RunTree('Test Results', '/projeto'); for (const line of text.split('\n')) tree.line(line); tree.finish(false); return tree; };
 
 test('mensagens TeamCity: escapes e linhas comuns', () => {
@@ -59,4 +60,11 @@ test('execução interrompida nunca vira aprovada', () => {
  assert.equal(formatDuration(850), '850 ms');
  assert.equal(formatDuration(1250), '1 s 250 ms');
  assert.equal(formatDuration(125000), '2 m 5 s');
+});
+
+test('saída com CRLF (PHPUnit no Windows) gera a mesma árvore', () => {
+ const comparison = build(crlf(fixture('phpunit-11.teamcity.txt'))).root.children[0].children[1];
+ const text = comparison.children.find(c => c.name === 'testComparesText')!;
+ assert.ok(text.output.includes('saída do teste'));
+ assert.ok(!text.output.some(line => line.endsWith('\r')));
 });

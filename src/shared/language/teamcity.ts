@@ -70,6 +70,7 @@ export class RunTree {
  }
  /** Uma linha da saída padrão; devolve o nó alterado (para atualizar só o necessário). */
  line(text: string): TestNode | undefined {
+  text = text.replace(/\r$/, ''); // CRLF do PHPUnit no Windows
   const message = parseMessage(text);
   if (!message) { (this.running ?? this.current).output.push(text); return this.running ?? this.current; }
   const a = message.attrs;
