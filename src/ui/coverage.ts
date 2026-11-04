@@ -22,7 +22,8 @@ export function mountCoverage(options: { clear(): void }) {
  function hideWindow() { panel.hidden = true; button.setAttribute('aria-pressed', 'false'); }
  button.onclick = () => panel.hidden ? show() : hideWindow();
  hide.onclick = hideWindow;
- clear.onclick = () => { options.clear(); table.replaceChildren(); title.textContent = ''; button.hidden = true; hideWindow(); };
+ const clearAll = () => { options.clear(); table.replaceChildren(); title.textContent = ''; button.hidden = true; hideWindow(); };
+ clear.onclick = clearAll;
  let tree: CoverageNode | undefined; const collapsed = new Set<string>();
  function cell(r: { covered: number; total: number }, column: string) {
   const p = percent(r);
@@ -54,6 +55,8 @@ export function mountCoverage(options: { clear(): void }) {
    tree = coverageTree(files); title.textContent = `${suite}: ${tr('resultados da cobertura')}`;
    button.hidden = false; render(); show();
   },
+  /** "Ocultar cobertura" do popup do gutter: tira as marcas do editor e fecha a janela. */
+  hide: clearAll,
   reset() { tree = undefined; table.replaceChildren(); button.hidden = true; hideWindow(); },
  };
 }

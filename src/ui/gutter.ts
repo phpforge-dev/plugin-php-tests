@@ -2,7 +2,7 @@
 // Pest) com o estado da última execução (aprovado, falhou, ignorado) e marcas de cobertura por linha.
 import { discoverTests, isTestFile, type TestCase, type TestFramework } from '../shared/language/php-tests';
 import { leaves, type NodeStatus, type TestNode } from '../shared/language/teamcity';
-import { lineStates, type FileCoverage } from '../shared/language/coverage';
+import { lineStates, uncoveredFrom, type FileCoverage } from '../shared/language/coverage';
 import { activePath, disposable, h, on, sdk, tr } from './sdk';
 import { icons, runIcon } from './icons';
 
@@ -17,7 +17,7 @@ const toState = (s: NodeStatus): State | undefined => s === 'passed' ? 'passed' 
 const palette: Record<string, string> = { '--pt-run': '#4FA35A', '--pt-passed': '#4FA35A', '--pt-failed': '#DB5C5C', '--pt-ignored': '#8C8C8C' };
 const uri = (svg: string) => `url("data:image/svg+xml,${encodeURIComponent(svg.replace(/var\((--pt-[a-z]+)\)/g, (_, v) => palette[v] ?? '#888').replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" '))}")`;
 
-export function mountGutter(options: { framework: () => TestFramework | null; act(action: GutterAction, path: string, test: TestCase | null): void }) {
+export function mountGutter(options: { framework: () => TestFramework | null; act(action: GutterAction, path: string, test: TestCase | null): void; hideCoverage(): void }) {
  const editor = sdk.host.editor; const { monaco } = sdk;
  const style = h('style', { textContent: [
   `.pt-g{background-repeat:no-repeat;background-position:center;background-size:16px 16px;cursor:pointer}`,
@@ -30,7 +30,7 @@ export function mountGutter(options: { framework: () => TestFramework | null; ac
  const states = new Map<string, State>();
  let coverage = new Map<string, FileCoverage>();
  let tests: TestCase[] = []; let file: string | undefined; let timer: ReturnType<typeof setTimeout> | undefined;
- sdk.own(() => { clearTimeout(timer); decorations.clear(); coverageDecorations.clear(); closeMenu(); });
+ sdk.own(() => { clearTimeout(timer); decorations.clear(); coverageDecorations.clear(); closeMenu(); closeHits(); });
 
  function stateOf(test: TestCase): State | undefined {
   if (!file) return undefined;
@@ -56,10 +56,61 @@ export function mountGutter(options: { framework: () => TestFramework | null; ac
  function paintCoverage() {
   const model = editor.getModel(); const path = model ? activePath() : undefined;
   const data = path ? coverage.get(path) : undefined;
-  coverageDecorations.set(data ? [...lineStates(data)].filter(([line]) => line <= model.getLineCount()).map(([line, s]) => ({ range: new monaco.Range(line, 1, line, 1), options: { isWholeLine: true, linesDecorationsClassName: s.covered ? 'pt-cov pt-cov-covered' : 'pt-cov pt-cov-uncovered', overviewRuler: undefined, hoverMessage: undefined, linesDecorationsTooltip: s.covered ? `${tr('Execuções')}: ${s.count}` : tr('Linha não coberta') } })) : []);
+  // Sem dica ao passar o mouse (como na referência): o clique na marca abre o popup de execuções.
+  coverageDecorations.set(data ? [...lineStates(data)].filter(([line]) => line <= model.getLineCount()).map(([line, s]) => ({ range: new monaco.Range(line, 1, line, 1), options: { isWholeLine: true, linesDecorationsClassName: s.covered ? 'pt-cov pt-cov-covered' : 'pt-cov pt-cov-uncovered' } })) : []);
  }
+ /** Estados de cobertura do arquivo aberto (linha 1-based). */
+ function coverageStates() { const path = editor.getModel() ? activePath() : undefined; const data = path ? coverage.get(path) : undefined; return data ? lineStates(data) : undefined; }
+
+ // Popup do indicador de cobertura: ↑ "Anterior não coberta", ↓ "Próxima não coberta", "Ocultar
+ // cobertura" e "Execuções: N" (na referência: Previous/Next Uncovered ⌥⇧↑/⌥⇧↓, Hide coverage, "Hits: N").
+ let hits: HTMLElement | undefined; let hitsLine = 0;
+ function closeHits() { hits?.remove(); hits = undefined; hitsLine = 0; hitsJump = undefined; }
+ function openHits(line: number) {
+  const states = coverageStates(); const state = states?.get(line); if (!states || !state) { closeHits(); return; }
+  closeHits(); hitsLine = line;
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+  const jump = (direction: 1 | -1) => { const to = uncoveredFrom(states, line, direction); if (!to) return; editor.setPosition({ lineNumber: to, column: 1 }); editor.revealLineInCenterIfOutsideViewport(to); openHits(to); };
+  const tool = (id: string, label: string, keys: string, glyph: string, direction: 1 | -1) => {
+   const b = h('button', { type: 'button', id, className: 'pt-tool', title: `${label} ${keys}`, attrs: { 'aria-label': label, 'aria-keyshortcuts': `Alt+Shift+${direction === 1 ? 'ArrowDown' : 'ArrowUp'}` } });
+   b.innerHTML = glyph; b.disabled = !uncoveredFrom(states, line, direction); b.onclick = () => jump(direction); return b;
+  };
+  const arrow = (d: string) => `<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const up = tool('coverage-hits-previous', tr('Anterior não coberta'), mac ? '⌥⇧↑' : 'Alt+Shift+↑', arrow('M8 13V3M4 7l4-4 4 4'), -1);
+  const down = tool('coverage-hits-next', tr('Próxima não coberta'), mac ? '⌥⇧↓' : 'Alt+Shift+↓', arrow('M8 3v10M4 9l4 4 4-4'), 1);
+  const hide = h('button', { type: 'button', id: 'coverage-hits-hide', className: 'pt-link', textContent: tr('Ocultar cobertura') });
+  hide.onclick = () => { closeHits(); editor.focus(); options.hideCoverage(); };
+  hits = h('div', { id: 'coverage-hits', className: 'pt-hits', tabIndex: -1, attrs: { role: 'dialog', 'aria-label': tr('Cobertura da linha') + ' ' + line, 'data-line': String(line) } },
+   h('div', { className: 'pt-hits-bar' }, up, down, hide),
+   h('div', { className: 'pt-hits-count', textContent: `${tr('Execuções')}: ${state.count}` }));
+  document.body.append(hits); place();
+  hitsJump = jump;
+ }
+ let hitsJump: ((direction: 1 | -1) => void) | undefined;
+ /** Mantém o popup sob a linha ao rolar; fecha quando a linha sai da área visível. */
+ function place() {
+  if (!hits) return;
+  const box = (editor.getDomNode() as HTMLElement).getBoundingClientRect();
+  const at = editor.getScrolledVisiblePosition({ lineNumber: hitsLine, column: 1 });
+  if (!at || at.top < 0 || at.top > box.height) { closeHits(); return; }
+  hits.style.left = `${Math.round(box.left + editor.getLayoutInfo().decorationsLeft)}px`;
+  hits.style.top = `${Math.round(box.top + at.top + at.height)}px`;
+ }
+ // Com o popup aberto, ⌥⇧↑/⌥⇧↓ e Esc são dele (o editor mantém o foco depois do clique na marca).
+ on<KeyboardEvent>(window, 'keydown', e => {
+  if (!hits) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closeHits(); editor.focus(); }
+  else if (e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); e.stopImmediatePropagation(); hitsJump?.(e.key === 'ArrowDown' ? 1 : -1); }
+ }, { capture: true });
+ disposable(editor.onMouseDown((e: any) => {
+  if (e.target?.type !== monaco.editor.MouseTargetType.GUTTER_LINE_DECORATIONS) return;
+  const line = e.target.position?.lineNumber; if (!line || !coverageStates()?.has(line)) return;
+  e.event?.preventDefault?.(); openHits(line);
+ }));
+ disposable(editor.onDidScrollChange(() => place()));
+ on(document, 'pointerdown', e => { if (hits && !hits.contains(e.target as Node) && !(e.target as Element)?.closest?.('.pt-cov')) closeHits(); });
  const schedule = () => { clearTimeout(timer); timer = setTimeout(paint, 200); };
- disposable(editor.onDidChangeModel(() => { closeMenu(); paint(); }));
+ disposable(editor.onDidChangeModel(() => { closeMenu(); closeHits(); paint(); }));
  disposable(editor.onDidChangeModelContent(schedule));
 
  // Menu do ícone: a captura no contêiner impede que outro dono do gutter (breakpoints) receba o clique.
@@ -127,7 +178,9 @@ export function mountGutter(options: { framework: () => TestFramework | null; ac
    for (const [k, v] of fresh) states.set(k, v);
    paint();
   },
-  coverage(files: FileCoverage[] | null) { coverage = new Map((files ?? []).map(f => [f.path, f])); paintCoverage(); },
+  coverage(files: FileCoverage[] | null) { coverage = new Map((files ?? []).map(f => [f.path, f])); closeHits(); paintCoverage(); },
+  /** Linha cujo popup de execuções está aberto (0 = nenhum). */
+  hitsLine: () => hitsLine,
   tests: () => tests,
  };
 }

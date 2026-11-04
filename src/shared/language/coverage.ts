@@ -71,9 +71,21 @@ export function coverageTree(files: FileCoverage[]): CoverageNode {
  return compact(root);
 }
 
-/** Estado por linha para o gutter: coberta, não coberta ou ignorada (declaração de método conta como não executável). */
+/**
+ * Estado por linha para o gutter. Na referência (PhpStorm 2026.1.4, relatório Clover importado) a
+ * linha da declaração do método também recebe marca, verde ou vermelha conforme o método rodou.
+ */
 export function lineStates(file: FileCoverage): Map<number, { covered: boolean; count: number }> {
  const out = new Map<number, { covered: boolean; count: number }>();
- for (const l of file.lines) if (!l.method) out.set(l.line, { covered: l.count > 0, count: l.count });
+ for (const l of file.lines) out.set(l.line, { covered: l.count > 0, count: l.count });
  return out;
+}
+
+/**
+ * Próxima (ou anterior) linha não coberta a partir de `line`, como "Next/Previous Uncovered" do popup
+ * do gutter: só o início de cada trecho contínuo de linhas não cobertas conta; não dá a volta no arquivo.
+ */
+export function uncoveredFrom(states: Map<number, { covered: boolean }>, line: number, direction: 1 | -1): number | undefined {
+ const starts = [...states].filter(([n, s]) => !s.covered && states.get(n - 1)?.covered !== false).map(([n]) => n).sort((a, b) => a - b);
+ return direction === 1 ? starts.find(n => n > line) : starts.reverse().find(n => n < line);
 }

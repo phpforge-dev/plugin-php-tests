@@ -60,7 +60,7 @@ export function activate(value: Sdk) {
   if (action === 'edit') configs.edit(config.id);
   else run(config, action === 'coverage');
  }
- const gutter = mountGutter({ framework: () => framework, act });
+ const gutter = mountGutter({ framework: () => framework, act, hideCoverage: () => coverageWindow.hide() });
 
  // Atalhos (perfil JetBrains macOS da ajuda pública: ⌃R, ⌃⇧R, ⌘R, ⌘F2).
  const category = 'Executar';
