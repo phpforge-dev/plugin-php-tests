@@ -4,7 +4,8 @@ export type LineHit = { line: number; count: number; method?: string };
 export type ClassCoverage = { name: string; methods: number; coveredMethods: number; statements: number; coveredStatements: number };
 export type FileCoverage = { path: string; lines: LineHit[]; classes: ClassCoverage[] };
 export type Ratio = { covered: number; total: number };
-export type CoverageNode = { name: string; path: string; kind: 'dir' | 'file'; classes: Ratio; methods: Ratio; lines: Ratio; children: CoverageNode[] };
+/** Pastas: arquivos com alguma linha executada e linhas; arquivos: só linhas (como a coluna "Statistics, %" da referência). */
+export type CoverageNode = { name: string; path: string; kind: 'dir' | 'file'; files: Ratio; lines: Ratio; children: CoverageNode[] };
 
 const attrs = (tag: string) => Object.fromEntries([...tag.matchAll(/([\w:-]+)="([^"]*)"/g)].map(m => [m[1], m[2].replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'").replace(/&amp;/g, '&')]));
 
@@ -31,27 +32,38 @@ export function parseClover(xml: string, root: string): FileCoverage[] {
 
 const add = (a: Ratio, b: Ratio): Ratio => ({ covered: a.covered + b.covered, total: a.total + b.total });
 const zero = (): Ratio => ({ covered: 0, total: 0 });
-/** Percentual inteiro como na referência; `null` quando não há o que medir (mostrado como "–"). */
+/** Percentual inteiro truncado, como na referência (7/13 → 53%); `null` quando não há o que medir. */
 export const percent = (r: Ratio) => r.total ? Math.floor((r.covered / r.total) * 100) : null;
 export const label = (r: Ratio) => { const p = percent(r); return p === null ? '–' : `${p}% (${r.covered}/${r.total})`; };
 
-function fileNode(f: FileCoverage): CoverageNode {
- const statements = f.lines.filter(l => !l.method);
- const methods = f.lines.filter(l => l.method);
- // Classe coberta quando ao menos um método dela foi executado.
- const classes = f.classes.reduce((r, c) => add(r, { covered: c.coveredMethods > 0 || (c.methods === 0 && c.coveredStatements > 0) ? 1 : 0, total: 1 }), zero());
- return { name: f.path.split('/').pop()!, path: f.path, kind: 'file', classes, methods: { covered: methods.filter(m => m.count > 0).length, total: methods.length }, lines: { covered: statements.filter(l => l.count > 0).length, total: statements.length }, children: [] };
+/**
+ * Texto da coluna "Estatísticas, %" e da árvore Project. Observado no PhpStorm 2026.1.4 com Clover:
+ * pasta "100% files, 59% lines", arquivo "40% lines". Linhas = todas as entradas `<line>` do Clover
+ * (declaração de método + instruções); arquivo coberto = ao menos uma linha executada.
+ */
+export function statistics(node: Pick<CoverageNode, 'kind' | 'files' | 'lines'>, words: { files: string; lines: string } = { files: 'files', lines: 'lines' }): string {
+ const lines = percent(node.lines); const files = percent(node.files);
+ const l = `${lines ?? 0}% ${words.lines}`;
+ return node.kind === 'file' ? l : `${files ?? 0}% ${words.files}, ${l}`;
 }
 
-/** Árvore de pastas com totais agregados; pastas com um único filho pasta são compactadas (`src/App`). */
+function fileNode(f: FileCoverage): CoverageNode {
+ const lines = { covered: f.lines.filter(l => l.count > 0).length, total: f.lines.length };
+ return { name: f.path.split('/').pop()!, path: f.path, kind: 'file', files: { covered: lines.covered > 0 ? 1 : 0, total: 1 }, lines, children: [] };
+}
+
+/**
+ * Árvore de pastas com totais agregados, sem compactar pastas (na referência `src` › `Money` aparecem
+ * como na árvore Project). A raiz (path '') soma o projeto; suas filhas são as pastas de primeiro nível.
+ */
 export function coverageTree(files: FileCoverage[]): CoverageNode {
- const root: CoverageNode = { name: 'all', path: '', kind: 'dir', classes: zero(), methods: zero(), lines: zero(), children: [] };
+ const root: CoverageNode = { name: '', path: '', kind: 'dir', files: zero(), lines: zero(), children: [] };
  for (const f of files) {
   const parts = f.path.split('/'); let dir = root;
   for (let i = 0; i < parts.length - 1; i++) {
    const path = parts.slice(0, i + 1).join('/');
    let next = dir.children.find(c => c.kind === 'dir' && c.path === path);
-   if (!next) { next = { name: parts[i], path, kind: 'dir', classes: zero(), methods: zero(), lines: zero(), children: [] }; dir.children.push(next); }
+   if (!next) { next = { name: parts[i], path, kind: 'dir', files: zero(), lines: zero(), children: [] }; dir.children.push(next); }
    dir = next;
   }
   dir.children.push(fileNode(f));
@@ -59,16 +71,18 @@ export function coverageTree(files: FileCoverage[]): CoverageNode {
  const sum = (n: CoverageNode) => {
   if (n.kind === 'file') return;
   n.children.forEach(sum);
-  n.classes = n.children.reduce((r, c) => add(r, c.classes), zero()); n.methods = n.children.reduce((r, c) => add(r, c.methods), zero()); n.lines = n.children.reduce((r, c) => add(r, c.lines), zero());
+  n.files = n.children.reduce((r, c) => add(r, c.files), zero()); n.lines = n.children.reduce((r, c) => add(r, c.lines), zero());
   n.children.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'dir' ? -1 : 1));
  };
  sum(root);
- const compact = (n: CoverageNode): CoverageNode => {
-  n.children = n.children.map(compact);
-  if (n !== root && n.kind === 'dir' && n.children.length === 1 && n.children[0].kind === 'dir') { const only = n.children[0]; return { ...only, name: `${n.name}/${only.name}` }; }
-  return n;
- };
- return compact(root);
+ return root;
+}
+
+/** Nó por caminho relativo ('' = raiz). */
+export function findNode(root: CoverageNode, path: string): CoverageNode | undefined {
+ if (root.path === path) return root;
+ for (const c of root.children) if (c.kind === 'dir' ? path === c.path || path.startsWith(c.path + '/') : c.path === path) return findNode(c, path);
+ return undefined;
 }
 
 /**

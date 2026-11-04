@@ -8,6 +8,10 @@ export type Sdk = {
  resizeToolWindow(panel: HTMLElement, handle: HTMLElement, key: string, floor?: number): void;
  toolIcon(button: HTMLElement, path: string, label: string): void;
  api: Api; host: Host;
+ /** Ícone de arquivo/pasta do host. */
+ fileIcon?: (path: string, directory?: boolean) => HTMLElement;
+ /** Texto depois do nome na árvore Project (host 0.2.20+; ausente em hosts antigos). */
+ projectTree?: { decorate(fn: (entry: { path: string; directory: boolean }) => { text: string; title?: string } | null): () => void; refresh(): void };
 };
 export type RunOutput = { command: string; exitCode: number | null; cancelled: boolean; timedOut: boolean; durationMs: number; junit: string | null; clover: string | null; teamcity: string; teamcityTruncated: boolean; output: string; stderr: string };
 export type Api = {

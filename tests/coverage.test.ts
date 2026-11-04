@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { coverageTree, label, lineStates, parseClover, percent, uncoveredFrom } from '../src/shared/language/coverage';
+import { coverageTree, findNode, label, lineStates, parseClover, percent, statistics, uncoveredFrom } from '../src/shared/language/coverage';
 
 const xml = readFileSync(join(process.env.PHP_TESTS_FIXTURES!, 'phpunit-11.clover.xml'), 'utf8');
 
@@ -15,15 +15,23 @@ test('Clover: arquivos do projeto, linhas e classes', () => {
  assert.equal(parseClover(xml, '/outro').length, 0, 'fora da raiz é ignorado');
 });
 
-test('árvore com percentuais de classe, método e linha', () => {
+test('estatísticas como na referência: % de arquivos e linhas (método + instrução), truncado', () => {
  const tree = coverageTree(parseClover(xml, '/projeto'));
  const src = tree.children[0];
  assert.equal(src.name, 'src');
  const formatter = src.children.find(c => c.name === 'Formatter.php')!;
- assert.deepEqual([formatter.classes, formatter.methods, formatter.lines], [{ covered: 1, total: 1 }, { covered: 1, total: 2 }, { covered: 1, total: 3 }]);
- assert.equal(label(formatter.lines), '33% (1/3)');
- assert.equal(percent(src.methods), 75);
+ assert.deepEqual(formatter.lines, { covered: 2, total: 5 });
+ assert.equal(statistics(formatter), '40% lines');
+ assert.equal(statistics(src), '100% files, 66% lines');
+ assert.equal(statistics(src, { files: 'arquivos', lines: 'linhas' }), '100% arquivos, 66% linhas');
+ assert.equal(findNode(tree, 'src/Formatter.php'), formatter);
  assert.equal(label({ covered: 0, total: 0 }), '–');
+ assert.equal(percent({ covered: 7, total: 13 }), 53, 'Money no PhpStorm: 7/13 → 53%');
+ // Pastas aninhadas não são compactadas (src › Money › Rates).
+ const nested = coverageTree([{ path: 'src/Money/Rates/Table.php', lines: [{ line: 9, count: 1 }, { line: 14, count: 0 }], classes: [] }, { path: 'src/Money/Currency.php', lines: [{ line: 8, count: 0 }], classes: [] }]);
+ assert.deepEqual(nested.children.map(c => c.name), ['src']);
+ assert.deepEqual(nested.children[0].children[0].children.map(c => c.name), ['Rates', 'Currency.php']);
+ assert.equal(statistics(nested.children[0]), '50% files, 33% lines');
 });
 
 test('próxima/anterior não coberta: início de cada trecho, sem dar a volta', () => {
